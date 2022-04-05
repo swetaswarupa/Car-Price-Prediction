@@ -1,0 +1,444 @@
+---
+title: "Car Price Prediction Project"
+author: "Sweta Swarupa"
+date: "`r format(Sys.time(), '%d/%m/%y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: yes
+geometry: left=2cm,right=2cm,top=2cm,bottom=2cm
+---
+
+```{css, include=FALSE, echo = FALSE}
+.remark-slide-content {
+  font-size: 24px;
+  padding: 20px 60px 20px 60px;
+}
+.remark-code, .remark-inline-code {
+  background: #f0f0f0;
+}
+.remark-code {
+  font-size: 20px;
+}
+.huge .remark-code {
+  font-size: 100% !important;
+}
+.tiny .remark-code {
+  font-size: 50% !important;
+}
+```
+```{r loading_libraries, inlcude=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+library(data.table)
+library(randomForest)
+library(ggplot2)
+library(corrplot)
+library(dplyr)
+```
+
+# Introduction:
+The aim of this project is to build algorithms to predict selling price of cars. The dataset is taken from Kaggle.
+Data Source: https://www.kaggle.com/nehalbirla/vehicle-dataset-from-cardekho?select=Car+details+v3.csv
+
+I will use three different models, linear regression, random forest and gradient boosting to predict selling prices of cars and compare the results.
+
+
+## Attribute Information: 
+
+name - Name of the cars
+
+year - Year of the car when it was bought
+
+selling_price - Price at which the car is being sold
+
+km_driven - Number of Kilometers the car is driven
+
+fuel - Fuel type of car (petrol / diesel / CNG / LPG / electric)
+
+seller_type - Tells if a Seller is Individual or a Dealer
+
+transmission - Gear transmission of the car (Automatic/Manual)
+
+Owner - Number of previous owners of the car.
+
+
+```{r, collapse = TRUE}
+#Reading the data
+car<- read.csv("https://raw.githubusercontent.com/swetaswarupa/Car-Price-Prediction/main/Car%20details%20v3.csv", header = TRUE)
+str(car)
+```
+
+**A portion of the car data set is shown below:**
+
+```{r, inlcude=FALSE, echo=FALSE}
+library(knitr)
+kable(car[1:5,1:10], caption = "Car Data")
+```
+
+There are 8128 rows and 13 variables. Our target variable is the selling_price, which signifies the price of the car. We will use other variables to predict selling_price.
+
+```{r, inlcude=FALSE, echo=FALSE}
+#Removing Torque variable
+car <- car %>% select(-c(torque))
+```
+
+# Data Exploration, Data Cleaning and Data Transformation
+
+## Car name variable
+
+```{r, collapse = TRUE}
+
+#Extracting brand name from car name
+
+car$name <- sapply(strsplit(car$name, " "), `[`, 1)
+
+#Plotting car name to check the distribution
+
+ggplot(data = car, aes(x=name, fill = name)) +
+  geom_bar() + labs(x='Car Brand') + labs(title = "Bar Graph of Car Brand") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r, collapse = TRUE}
+#Converting car name into Ordinal Encoder
+
+car$name <- str_replace(car$name, 'Maruti', '0')
+car$name <- str_replace(car$name, 'Skoda', '1')
+car$name <- str_replace(car$name, 'Honda', '2')
+car$name <- str_replace(car$name, 'Hyundai', '3')
+car$name <- str_replace(car$name, 'Toyota', '4')
+car$name <- str_replace(car$name, 'Ford', '5')
+car$name <- str_replace(car$name, 'Renault', '6')
+car$name <- str_replace(car$name, 'Mahindra', '7')
+car$name <- str_replace(car$name, 'Tata', '8')
+car$name <- str_replace(car$name, 'Chevrolet', '9')
+car$name <- str_replace(car$name, 'Fiat', '10')
+car$name <- str_replace(car$name, 'Datsun', '11')
+car$name <- str_replace(car$name, 'Jeep', '12')
+car$name <- str_replace(car$name, 'Mercedes-Benz', '13')
+car$name <- str_replace(car$name, 'Mitsubishi', '14')
+car$name <- str_replace(car$name, 'Audi', '15')
+car$name <- str_replace(car$name, 'Volkswagen', '16')
+car$name <- str_replace(car$name, 'BMW', '17')
+car$name <- str_replace(car$name, 'Nissan', '18')
+car$name <- str_replace(car$name, 'Lexus', '19')
+car$name <- str_replace(car$name, 'Jaguar', '20')
+car$name <- str_replace(car$name, 'Land', '21')
+car$name <- str_replace(car$name, 'MG', '22')
+car$name <- str_replace(car$name, 'Volvo', '23')
+car$name <- str_replace(car$name, 'Daewoo', '24')
+car$name <- str_replace(car$name, 'Kia', '25')
+car$name <- str_replace(car$name, 'Force', '26')
+car$name <- str_replace(car$name, 'Ambassador', '27')
+car$name <- str_replace(car$name, 'Ashok', '28')
+car$name <- str_replace(car$name, 'Isuzu', '29')
+car$name <- str_replace(car$name, 'Opel', '30')
+car$name <- str_replace(car$name, 'Peugeot', '31')
+
+#Converting car name from categorical to numerical value
+
+car$name <- as.numeric(car$name)
+table(car$name)
+```
+
+Highest numbers of cars fall into Maruti brand followed by Hyundai, Mahindra and Tata
+
+## Substituting blank with NA for columns mileage, engine, max_power
+
+```{r, collapse = TRUE}
+car$mileage[car$mileage == ""] <- NA
+car$engine[car$engine == ""] <- NA
+car$max_power[car$max_power == ""] <- NA
+```
+
+## Checking for missing values
+
+```{r, collapse = TRUE}
+# Checking for missing values
+sapply(car, function(x) sum(is.na(x)))
+```
+
+There are 221 missing values for mileage, engine, seats and 215 missing values for max_power
+
+## Transforming mileage, engine, max_power and seat from categorical to numerical value and replacing missing values with their mean values
+
+```{r, collapse = TRUE}
+#Removing unit from mileage, converting it to numeric value and replacing the missing values
+car$mileage <- str_replace(car$mileage, 'kmpl', '')
+car$mileage <- str_replace(car$mileage, 'km/kg', '')
+car$mileage <- as.numeric(car$mileage)
+car$mileage[is.na(car$mileage)]<-mean(car$mileage,na.rm=TRUE)
+```
+
+```{r, collapse = TRUE}
+#Removing unit from engine, converting it to numeric value and replacing the missing values
+
+car$engine <- str_replace(car$engine, 'CC', '')
+car$engine <- as.numeric(car$engine)
+car$engine[is.na(car$engine)]<-mean(car$engine,na.rm=TRUE)
+```
+
+```{r, collapse = TRUE}
+#Removing unit from max_power, converting it to numeric value and replacing the missing values
+car$max_power <- str_replace(car$max_power, 'bhp', '')
+car$max_power <- as.numeric(car$max_power)
+car$max_power[is.na(car$max_power)]<-mean(car$max_power,na.rm=TRUE)
+```
+
+```{r, collapse = TRUE}
+#Converting seats to numeric value and replacing the missing values
+car$seats <- as.numeric(car$seats)
+car$seats[is.na(car$seats)]<-median(car$seats,na.rm=TRUE)
+```
+
+Let's check for missing values after treating missing values
+
+```{r, collapse = TRUE}
+# Checking for missing values once again
+sapply(car, function(x) sum(is.na(x)))
+```
+
+There are no missing vales any more.
+
+## Plotting categorical Values and checking for distribution
+
+```{r, collapse = TRUE}
+# Bar graph of Fuel
+ggplot(data = car, aes(x=reorder(fuel, fuel, function(x)-length(x)), fill = fuel)) +
+  geom_bar() + labs(x='Fuel') + labs(title = "Bar Graph of Fuel") 
+```
+
+Most of the cars fall into Diesel category followed by Petrol. Very few cars fall into CNG and LPG category.
+
+```{r, collapse = TRUE}
+#Bar graph of Seller Typs
+ggplot(data = car, aes(x=reorder(seller_type, seller_type, function(x)-length(x)), fill = seller_type)) +
+  geom_bar() + labs(x='Seller Type') + labs(title = "Bar Graph of Seller Type")
+```
+
+Huge number of cars are owned by individual owners followed by Dealer and Trustmark Dealers.
+
+```{r, collapse = TRUE}
+# Bar graph of Owner
+ggplot(data = car, aes(x=reorder(owner, owner, function(x)-length(x)), fill = owner)) +
+  geom_bar() + labs(x='Owner') + labs(title = "Bar Graph of Owner") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Most of the cars are owned by first owners.
+
+```{r, collapse = TRUE}
+# Bar graph of seats
+ggplot(data = car, aes(x=reorder(seats, seats, function(x)-length(x)), fill = seats)) +
+  geom_bar() + labs(x='Seats') + labs(title = "Bar Graph of Seats") +theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+```
+
+Most of the cars are 5 seater.
+
+## Converting transmission, owner, seller type and fuel into ordinal encoder
+
+```{r, collapse = TRUE}
+#Converting transmission column into binary 0 if Manual and 1 if Automatic
+car$transmission <- str_replace(car$transmission, 'Manual', "0")
+car$transmission <- str_replace(car$transmission, 'Automatic', "1")
+car$transmission <- as.numeric(car$transmission)
+table(car$transmission)
+```
+
+```{r, collapse = TRUE}
+#Converting owner into Ordinal Encoder
+car$owner <- str_replace(car$owner, 'First Owner', "0")
+car$owner <- str_replace(car$owner, 'Second Owner', "1")
+car$owner <- str_replace(car$owner, 'Third Owner', "2")
+car$owner <- str_replace(car$owner, 'Fourth & Above Owner', "3")
+car$owner <- str_replace(car$owner, 'Test Drive Car', "4")
+car$owner <- as.numeric(car$owner)
+table(car$owner)
+```
+
+```{r, collapse = TRUE}
+#Converting seller_type into Ordinal Encoder
+car$seller_type <- str_replace(car$seller_type, "Trustmark Dealer", "0")
+car$seller_type <- str_replace(car$seller_type, "Dealer", "1")
+car$seller_type <- str_replace(car$seller_type, "Individual", "2")
+car$seller_type <- as.numeric(car$seller_type)
+table(car$seller_type)
+```
+
+```{r, collapse = TRUE}
+#Converting fuel into Ordinal Encoder
+car$fuel <- str_replace(car$fuel, 'Diesel', "0")
+car$fuel <- str_replace(car$fuel, 'Petrol', "1")
+car$fuel <- str_replace(car$fuel, 'CNG', "2")
+car$fuel <- str_replace(car$fuel, 'LPG', "3")
+car$fuel <- as.numeric(car$fuel)
+table(car$fuel)
+```
+
+## Plotting histogram of selling price, km driven to check the distribution
+
+```{r, warning=FALSE, collapse = TRUE}
+#Histogram of Selling Price
+ggplot(car, aes(x=selling_price)) + 
+  geom_histogram(aes(y=..density..), colour="black", fill="white")+
+  geom_density(alpha=.2, fill="blue")+
+  labs(x='Selling Price ') + labs(title = "Histogram Graph of Selling Price") +
+  scale_x_continuous(trans='log10')
+```
+
+We can see that selling price is heavily skewed. 
+
+```{r, collapse = TRUE}
+#Histogram of Km Driven
+ggplot(car, aes(x=km_driven)) + 
+  geom_histogram(color="black", fill="blue", bins = 200)+
+  labs(x='Km Driven ') + labs(title = "Histogram Graph of Km Driven") +
+  scale_x_continuous(trans='log10')
+```
+
+# Checking correlation between variables
+
+```{r, collapse = TRUE}
+library(corrplot)
+corrplot(cor(car), type="full", 
+         method ="color", title = "Correlation Plot", 
+         mar=c(0,0,1,0), tl.cex= 0.8, outline= T, tl.col="indianred4")
+round(cor(car),2)
+```
+
+We can see that selling price is highly correlated to max_power then transmission and name. 
+
+# Splitting the Data into training and test data sets
+
+```{r, collapse = TRUE}
+set.seed(5)
+trainIndex <- createDataPartition(car$selling_price, p = .7,
+                                  list = FALSE,
+                                  times = 1)
+Train <- car[ trainIndex,]
+Test <- car[-trainIndex,]
+```
+
+Splitting data into 70% Training and 30% Test.
+
+# Model 1 - Linear Regression
+
+## Building Model
+```{r, collapse = TRUE}
+m1_lr <- lm(selling_price ~ name+year+km_driven+seller_type+mileage+transmission+max_power, data = Train)
+summary(m1_lr)
+plot(m1_lr)
+```
+
+## Using the model to predict selling price in the Test dataset
+```{r, collapse = TRUE}
+pred_lr <- predict(m1_lr, newdata = Test)
+error_lr <- Test$selling_price - pred_lr
+RMSE_lr <- sqrt(mean(error_lr^2))
+RMSE_lr
+```
+
+## Plotting predicted vs. actual values
+```{r, collapse = TRUE}
+plot(Test$selling_price,pred_lr, main="Scatterplot", col = c("red","blue"), xlab = "Actual Selling Price", ylab = "Predicted Selling Price")
+```
+
+Built Linear Regression models with different variables but kept the model with best RMSE value.
+RMSE value of 457916.9
+
+# Model 2 - Random Forest
+
+## Building Model
+```{r, collapse = TRUE}
+m2_rf <- randomForest(selling_price~.,data = Train)
+m2_rf
+plot(m2_rf)
+```
+
+## Feature Importance Plot
+```{r, collapse = TRUE}
+varImpPlot(m2_rf, main ='Feature Importance')
+```
+
+## Using the model to predict selling price in the Test dataset
+```{r, collapse = TRUE}
+pred_rf <- predict(m2_rf, Test)
+error_rf <- Test$selling_price - pred_rf
+RMSE_rf <- sqrt(mean(error_rf^2))
+RMSE_rf
+```
+
+## Plotting predicted vs. actual values
+```{r, collapse = TRUE}
+plot(Test$selling_price,pred_rf, main="Scatterplot", col = c("red","blue"), xlab = "Actual Selling Price", ylab = "Predicted Selling Price")
+```
+
+We got RMSE value of 129840.9
+
+# Model 3 - Gradient Boosting
+
+## Building Model
+```{r, collapse = TRUE}
+library(gbm)
+set.seed(123)
+m3_gbm <- gbm(
+  formula = selling_price ~ .,
+  distribution = "gaussian",
+  data = Train,
+  n.trees = 6000,
+  interaction.depth = 3,
+  shrinkage = 0.1,
+  cv.folds = 5,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+)  
+
+m3_gbm
+```
+
+## plot loss function as a result of n trees added to the ensemble
+```{r, collapse = TRUE}
+gbm.perf(m3_gbm, method = "cv")
+```
+
+## Variable importance
+```{r, collapse = TRUE}
+summary(
+  m3_gbm, 
+  cBars = 10,
+  method = relative.influence, las = 2
+)
+```
+
+## Using the model to predict selling price in the Test dataset
+```{r, collapse = TRUE}
+pred_gbm <- predict(m3_gbm, Test)
+error_gbm <- Test$selling_price - pred_gbm
+RMSE_gbm <- sqrt(mean(error_gbm^2))
+RMSE_gbm
+```
+
+## Plotting predicted vs. actual values
+```{r, collapse = TRUE}
+plot(Test$selling_price,pred_gbm, main="Scatterplot", col = c("red","blue"), xlab = "Actual Selling Price", ylab = "Predicted Selling Price")
+```
+
+We got RMSE value of 135282.4
+
+# Conclusion and Model Comparison
+We used linear regression, random forest and gradient boosting models to predict selling price of cars and we see that random forest gives us a better RMSE among the three models. The RMSE comparison for three different models is shown below.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Model <- c("Linear Regression", "Random Forest", "Gradient Boosting")
+RMSE <- c(457916.9, 129840.9, 135282.4)
+Model_Comparision <- data.frame(Model, RMSE)
+knitr::kable(Model_Comparision, "pipe")
+```
+
+Random Forest explains 96% of the variation. Variables that are useful to describe the variance are max_power, name, engine and year. The accuracy of the model in predicting the car price is measured with RMSE, RMSE of test dataset is 129840.9.In the random forest model we used 500 number of trees and number of variables tried at each split as 3. We can further tune the model to get better RMSE.
